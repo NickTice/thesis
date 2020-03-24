@@ -4,53 +4,52 @@ library('xlsx')
 library(bestglm)
 
 
+# Reads in excel file. Necessary because manual imputation was made for the high school socioeconomic information.
 y=file.choose()
 finalESPN1=read.xlsx(y,1)
 publicESPN=finalESPN1
 publicESPN = publicESPN[,-1]
-publicESPN = publicESPN[,-2]
-names(publicESPN) = c("Grade", "Position", "State", "Height", "Weight", "Drafted", "Private", "Enrollment", "AllBoys", "Minority", "EconomicDis", "Graduation")
-head(subset(publicESPN, select = 'Position'))
+names(publicESPN) = c("Grade","Name", "Position", "State", "Height", "Weight", "Drafted", "Private", "Enrollment", "AllBoys", "Minority", "EconomicDis", "Graduation")
 publicESPN$State=trimws(publicESPN$State)
 
 
 publicESPN$Northeast=0
 for (x in which(publicESPN$State %in% c("ME","NH","MA","RI","CT","VT","NY","PA","NJ", "DC","DE", "MD"))) {
-  publicESPN[x,13]=1
+  publicESPN[x,14]=1
 }
 
 publicESPN$South=0
 for (x in which(publicESPN$State %in% c("WV","VA","KY","TN","NC","SC","GA","AL","MS","AR","FL","LA"))){
-  publicESPN[x,14]=1
+  publicESPN[x,15]=1
 }
 
 publicESPN$Southwest=0
-for (x in which(publicESPN$State %in% c("TX","OK", "NM", "AZ","UT","NV"))){
-  publicESPN[x,15]=1
+for (x in which(publicESPN$State %in% c("TX","OK", "NM", "AZ"))){
+  publicESPN[x,16]=1
 }
 
 
 publicESPN$Midwest=0
 for (x in which(publicESPN$State %in% c("OH","IN","MI","IL","MO","WI","MN","IA","KS","NE","SD","ND"))){
-  publicESPN[x,16]=1
+  publicESPN[x,17]=1
 }
 
 
 publicESPN$West=0
-for (x in which(publicESPN$State %in% c("CO","WY","MT","ID","WA","OR","CA","AK","HI"))){
-  publicESPN[x,17]=1
+for (x in which(publicESPN$State %in% c("CO","WY","MT","ID","WA","OR","CA","AK","HI","UT","NV"))){
+  publicESPN[x,18]=1
 }
 
 
 publicESPN$OFF=0
 for (x in which(publicESPN$Position %in% c("QB", "QB-DT", "QB-PP","OC","OG","OT","RB","WR","TE", "TE-H", "TE-Y"))){
-  publicESPN[x,18]=1
+  publicESPN[x,19]=1
 }
 
 
 publicESPN$DEF=0
 for (x in which(publicESPN$Position %in% c("DE","DT","ILB","OLB","S","CB"))){
-  publicESPN[x,19]=1
+  publicESPN[x,20]=1
 }
 
 
@@ -59,11 +58,16 @@ publicESPN <- publicESPN[!duplicated(publicESPN),]
 publicESPN$EconomicDis=as.numeric(publicESPN$EconomicDis)
 
 publicESPN=subset(publicESPN, select = -c(State, Position))
+publicESPN=subset(publicESPN, select = -c(Name))
 publicESPN=publicESPN[c(1:3,5:17,4)]
 publicESPN=subset(publicESPN, subset = (Private==0))
 publicESPN=na.omit(publicESPN)
-
 publicESPN=subset(publicESPN, select = -c(Private,AllBoys))
+
+
+#####################################################################3
+
+
 modelspublicESPN=bestglm(publicESPN, IC="AIC", family = binomial,TopModels = 10)
 modelspublicESPN$BestModels
 
@@ -87,33 +91,6 @@ BIC(fit2)
 BIC(fit3)
 BIC(fit4)
 BIC(fit5)
-
-library(glmnet)
-# http://www.sthda.com/english/articles/36-classification-methods-essentials/149-penalized-logistic-regression-essentials-in-r-ridge-lasso-and-elastic-net/#computing-penalized-logistic-regression
-x=model.matrix(Drafted~.,publicESPN)[,-1]
-y=publicESPN$Drafted
-# alpha 1 for lasso 0 for ridge.
-# In penalized regression, you need to specify a constant lambda to adjust the amount of the coefficient shrinkage. The best lambda for your data, can be defined as the lambda that minimize the cross-validation prediction error rate. 
-# This can be determined automatically using the function cv.glmnet().
-
-cv.lasso <- cv.glmnet(x, y, alpha = 1, family = "binomial")
-model=glmnet(x, y, family = "binomial", alpha = 1, lambda = cv.lasso$lambda.min)
-# Make prediction on test data
-probabilities <- model %>% predict(newx = x)
-predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
-# Model accuracy
-observed.classes <- publicESPN$Drafted
-coef(model)
-mean(predicted.classes == observed.classes)
-
-full.model <- glm(Drafted ~., data = publicESPN, family = binomial)
-# Make predictions
-probabilities <- full.model %>% predict(publicESPN, type = "response")
-predicted.classes <- ifelse(probabilities > 0.5, 1,0)
-# Model accuracy
-observed.classes <- publicESPN$Drafted
-mean(predicted.classes == observed.classes)
-
 
 # fail top reject second model is better
 anova(fit4,fit5, test="Chisq")
@@ -208,13 +185,12 @@ specificity(publicESPN$Drafted, predicted5, threshold = optCutOff5)
 precision(publicESPN$Drafted, predicted5, threshold = optCutOff5)
 confusionMatrix(publicESPN$Drafted, predicted5, optCutOff5)
 
-# Final model
+#### Final model ####
 
 publicESPN.log=glm(Drafted~ Grade + Height + Minority + Graduation + Southwest, data = publicESPN, family = "binomial")
 predicted.publicESPN <- predict(publicESPN.log, publicESPN, type="response")
 
 optCutOff.publicESPN <- optimalCutoff(publicESPN$Drafted, predicted.publicESPN)
-
 
 misClassError(publicESPN$Drafted, predicted.publicESPN, threshold = optCutOff.publicESPN)
 
@@ -226,33 +202,30 @@ specificity(publicESPN$Drafted, predicted.publicESPN, threshold = optCutOff.publ
 precision(publicESPN$Drafted, predicted.publicESPN, threshold = optCutOff.publicESPN)
 confusionMatrix(publicESPN$Drafted, predicted.publicESPN, optCutOff.publicESPN)
 
+predicted.publicESPN=as.numeric(predicted.publicESPN)
+publicESPN$Prob=predicted.publicESPN
+write.xlsx(publicESPN, "ESPNPublicProb.xlsx")
+
 
 ## Tree
 
-ind = sample(2, nrow(publicESPN), replace=TRUE, prob=c(0.8,.2))
-trainData = publicESPN
-#testData = publicESPN[ind==2,]
 
-trainData=publicESPN
+traindata3 = publicESPN
 
-DraftStatus = ifelse(trainData$Drafted==1, "Drafted", "Undrafted")
-trainData=data.frame(trainData, DraftStatus)
-#DraftStatus = ifelse(testData$Drafted==1, "Drafted", "Undrafted")
-#testData=data.frame(testData, DraftStatus)
-trainData=subset(trainData, select = -Drafted)
-#testData=subset(testData, select = -Drafted)
-tree.train=tree(DraftStatus ~ ., data = trainData)
+traindata3=publicESPN
+
+DraftStatus = ifelse(traindata3$Drafted==1, "Drafted", "Undrafted")
+traindata3=data.frame(traindata3, DraftStatus)
+traindata3=subset(traindata3, select = -Drafted)
+tree.train=tree(DraftStatus ~ ., data = traindata3)
 summary(tree.train)
 plot(tree.train)
 text(tree.train, pretty = 0)
 
-#DraftStatus = ifelse(testData$Drafted==1, "Drafted", "Undrafted")
-#testData=data.frame(testData, DraftStatus2)
 
-train.pred=predict(tree.train, trainData, type = "class")
-#test.pred=predict(tree.train, testData, type="class")
+train.pred=predict(tree.train, traindata3, type = "class")
 
-cm1=table(predicted=train.pred, actual=trainData$DraftStatus)
+cm1=table(predicted=train.pred, actual=traindata3$DraftStatus)
 (sum(diag(cm1)))/sum(cm1)
 cm1[2,2]/(cm1[2,1]+cm1[2,2])
 
@@ -268,7 +241,7 @@ par(mfrow = c(1, 1))
 
 plot(train.cv)
 # better plot
-plot(train.cv$size, train.cv$dev / nrow(trainData), type = "b",
+plot(train.cv$size, train.cv$dev / nrow(traindata3), type = "b",
      xlab = "Tree Size", ylab = "CV Misclassification Rate")
 
 train.prune= prune.misclass(tree.train, best = 3)
@@ -278,17 +251,13 @@ plot(train.prune)
 text(train.prune, pretty = 0)
 title(main = "Pruned Classification Tree")
 
-train.prune.pred = predict(train.prune, trainData, type = "class")
-cm3=table(predicted = train.prune.pred, actual = trainData$DraftStatus)
+train.prune.pred = predict(train.prune, traindata3, type = "class")
+cm3=table(predicted = train.prune.pred, actual = traindata3$DraftStatus)
 
 (sum(diag(cm3)))/sum(cm3)
 cm3[2,2]/(cm3[2,1]+cm3[2,2])
 
-test.prune.pred = predict(train.prune, testData, type= "class")
-cm4=table(predicted = test.prune.pred, actual = testData$DraftStatus)
-(sum(diag(cm4)))/sum(cm4)
-cm4[2,2]/(cm4[2,1]+cm4[2,2])
-
+# Final tree
 
 finalpublicESPNtree=train.prune
 finalpublicESPNtree
@@ -296,8 +265,8 @@ finalpublicESPNtree
 plot(finalpublicESPNtree)
 text(finalpublicESPNtree, pretty = 0)
 title(main = "PublicESPN Classification Tree")
-publicESPN.pred = predict(finalpublicESPNtree,trainData3, type= "class")
-cm3=table(predicted = publicESPN.pred, actual = trainData3$DraftStatus)
+publicESPN.pred = predict(finalpublicESPNtree,traindata3, type= "class")
+cm3=table(predicted = publicESPN.pred, actual = traindata33$DraftStatus)
 cm3
 (sum(diag(cm3)))/sum(cm3)
 cm3[2,2]/(cm3[2,1]+cm3[2,2])

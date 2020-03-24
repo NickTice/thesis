@@ -4,75 +4,76 @@ library('stringr')
 library('xlsx')
 library(OptimalCutpoints)
 
-z=read.xlsx(file.choose(),1)
-south247=subset(z, select = -c(Column1, Year, Player, HighSchool))
-names(south247) = c("Grade", "Position", "State", "Height", "Weight", "Drafted", "Private", "Enrollment", "AllBoys", "Minority", "EconomicDis", "Graduation")
+# Reads in excel file. Necessary because manual imputation was made for the high school socioeconomic information.
+excel=read.xlsx(file.choose(),1)
+south247=subset(excel, select = -c(Column1, Year, HighSchool))
+names(south247) = c("Grade", "Name", "Position", "State", "Height", "Weight", "Drafted", "Private", "Enrollment", "AllBoys", "Minority", "EconomicDis", "Graduation")
 
 south247$Northeast=0
 for (x in which(south247$State %in% c("ME","NH","MA","RI","CT","VT","NY","PA","NJ", "DC","DE", "MD"))) {
-  south247[x,13]=1
+  south247[x,14]=1
 }
 
 south247$South=0
 for (x in which(south247$State %in% c("WV","VA","KY","TN","NC","SC","GA","AL","MS","AR","FL","LA"))){
-  south247[x,14]=1
+  south247[x,15]=1
 }
 
 south247$Southwest=0
-for (x in which(south247$State %in% c("TX","OK", "NM", "AZ","UT","NV"))){
-  south247[x,15]=1
+for (x in which(south247$State %in% c("TX","OK", "NM", "AZ"))){
+  south247[x,16]=1
 }
 
 south247$Midwest=0
 for (x in which(south247$State %in% c("OH","IN","MI","IL","MO","WI","MN","IA","KS","NE","SD","ND"))){
-  south247[x,16]=1
+  south247[x,17]=1
 }
 
 south247$West=0
-for (x in which(south247$State %in% c("CO","WY","MT","ID","WA","OR","CA","AK","HI"))){
-  south247[x,17]=1
+for (x in which(south247$State %in% c("CO","WY","MT","ID","WA","OR","CA","AK","HI","UT","NV"))){
+  south247[x,18]=1
 }
 
 
 # Dummy coding for positions
 south247$ATH=0
 for (x in which(south247$Position %in% "ATH")){
-  south247[x,18]=1
+  south247[x,19]=1
 }
 
 south247$QB=0
 for (x in which(south247$Position %in% c("DUAL", "PRO"))){
-  south247[x,19]=1
+  south247[x,20]=1
 }
 
 south247$OL=0
 for (x in which(south247$Position %in% c("OC","OG","OT"))){
-  south247[x,20]=1
+  south247[x,21]=1
 }
 
 south247$RB=0
 for (x in which(south247$Position %in% c("RB","APB"))){
-  south247[x,21]=1
+  south247[x,22]=1
 }
 
 south247$REC=0
 for (x in which(south247$Position %in% c("WR","TE"))){
-  south247[x,22]=1
+  south247[x,23]=1
 }
 
 south247$DL=0
 for (x in which(south247$Position %in% c("SDE","WDE","DT"))){
-  south247[x,23]=1
+  south247[x,24]=1
 }
 
 south247$LB=0
 for (x in which(south247$Position %in% c("ILB","OLB"))){
-  south247[x,24]=1
+  south247[x,25]=1
 }
 
 south247$DB=0
 for (x in which(south247$Position %in% c("S","CB"))){
-  south247[x,25]=1
+  south247[x,26]=1
 }
 
 south247=subset(south247, subset = (South==1))
@@ -80,8 +81,12 @@ south247=subset(south247, subset = (Private==0))
 south247=na.omit(south247)
 
 south247=subset(south247, select = -c(Position, State, Private, AllBoys, Northeast, South, Southwest, Midwest, West))
+south247=subset(south247, select = -c(Name))
 south247=south247[c(1:3,5:16,4)]
 south247=subset(south247, select = -c(ATH))
+
+
+#######################################################3
 
 
 library(bestglm)
@@ -90,6 +95,7 @@ south247AIC=bestglm(south247, IC="AIC", family = binomial, TopModels = 10 )
 south247AIC$BestModels
 south247BIC$BestModels
 
+# Best fits based on the bestglm function
 fit.null=glm(Drafted~ Grade + Height + Weight, data = south247, family = "binomial")
 fit1=glm(Drafted~ Grade + Height + Weight + REC + LB, data = south247, family = "binomial")
 fit2=glm(Drafted~ Grade + Height + Weight + REC, data = south247, family = "binomial")
@@ -195,7 +201,7 @@ specificity(south247$Drafted, predicted5, threshold = optCutOff5)
 precision(south247$Drafted, predicted5, threshold = optCutOff5)
 confusionMatrix(south247$Drafted, predicted5, optCutOff5)
 
-# Final model
+#### Final model ####
 
 south247.log=glm(Drafted~ Grade + Height + Weight + REC, data = south247, family = "binomial")
 predicted.south247 <- predict(south247.log, south247, type="response")
@@ -213,114 +219,65 @@ specificity(south247$Drafted, predicted.south247, threshold = optCutOff.south247
 precision(south247$Drafted, predicted.south247, threshold = optCutOff.south247)
 confusionMatrix(south247$Drafted, predicted.south247, optCutOff.south247)
 
-# http://www.sthda.com/english/articles/36-classification-methods-essentials/149-penalized-logistic-regression-essentials-in-r-ridge-lasso-and-elastic-net/#computing-penalized-logistic-regression
-x=model.matrix(Drafted~.,south247)[,-1]
-y=south247$Drafted
-# alpha 1 for lasso 0 for ridge.
-# In penalized regression, you need to specify a constant lambda to adjust the amount of the coefficient shrinkage. The best lambda for your data, can be defined as the lambda that minimize the cross-validation prediction error rate. 
-# This can be determined automatically using the function cv.glmnet().
-
-cv.lasso <- cv.glmnet(x, y, alpha = 1, family = "binomial")
-model=glmnet(x, y, family = "binomial", alpha = 1, lambda = cv.lasso$lambda.min)
-# Make prediction on test data
-probabilities <- model %>% predict(newx = x)
-predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
-# Model accuracy
-observed.classes <- south247$Drafted
-mean(predicted.classes == observed.classes)
-coef(model)
-
-full.model <- glm(Drafted ~., data = south247, family = binomial)
-# Make predictions
-probabilities <- full.model %>% predict(south247, type = "response")
-predicted.classes <- ifelse(probabilities > 0.5, 1,0)
-# Model accuracy
-observed.classes <- south247$Drafted
-mean(predicted.classes == observed.classes)
+predicted.south247=as.numeric(predicted.south247)
+south247$Prob=predicted.south247
+write.xlsx(south247, "247southProb.xlsx")
 
 
+##########################################################################
 
 library(tree)
-#SVM
 
+traindata2 = south247
 
-ind = sample(2, nrow(south247), replace=TRUE, prob=c(0.8,.2))
-trainData = south247
-#testData = south247[ind==2,]
+DraftStatus = ifelse(traindata2$Drafted==1, "Drafted", "Undrafted")
+traindata2=data.frame(traindata2, DraftStatus)
+traindata2=subset(traindata2, select = -Drafted)
 
-DraftStatus = ifelse(trainData$Drafted==1, "Drafted", "Undrafted")
-trainData=data.frame(trainData, DraftStatus)
-#DraftStatus = ifelse(testData$Drafted==1, "Drafted", "Undrafted")
-#testData=data.frame(testData, DraftStatus)
-trainData=subset(trainData, select = -Drafted)
-#testData=subset(testData, select = -Drafted)
-tree.train=tree(DraftStatus ~ ., data = trainData)
+tree.train=tree(DraftStatus ~ ., data = traindata2)
 summary(tree.train)
 plot(tree.train)
 text(tree.train, pretty = 0)
 
-#DraftStatus = ifelse(testData$Drafted==1, "Drafted", "Undrafted")
-#testData=data.frame(testData, DraftStatus2)
 
-train.pred=predict(tree.train, trainData, type = "class")
-#test.pred=predict(tree.train, testData, type="class")
+train.pred=predict(tree.train, traindata2, type = "class")
 
-cm1=table(predicted=train.pred, actual=trainData$DraftStatus)
+cm1=table(predicted=train.pred, actual=traindata2$DraftStatus)
 (sum(diag(cm1)))/sum(cm1)
 cm1[2,2]/(cm1[2,1]+cm1[2,2])
 
-#cm2=table(predicted=test.pred, actual=testData$DraftStatus)
-#(sum(diag(cm2)))/sum(cm2)
-#cm2[2,2]/(cm2[2,1]+cm2[2,2])
 
 train.cv = cv.tree(tree.train, FUN = prune.misclass)
 min_idx=which.min(train.cv$dev)
 train.cv$size[min_idx]
 
-par(mfrow = c(1, 1))
+par(mfrow = c(2, 1))
 
 plot(train.cv)
 # better plot
-plot(train.cv$size, train.cv$dev / nrow(trainData), type = "b",
+plot(train.cv$size, train.cv$dev / nrow(traindata2), type = "b",
      xlab = "Tree Size", ylab = "CV Misclassification Rate")
 
-train.prune= prune.misclass(tree.train, best =3 )
+train.prune= prune.misclass(tree.train, best =2 )
 summary(train.prune)
 
 plot(train.prune)
 text(train.prune, pretty = 0)
 title(main = "Pruned Classification Tree")
 
-train.prune.pred = predict(train.prune, trainData, type = "class")
-cm3=table(predicted = train.prune.pred, actual = trainData$DraftStatus)
+train.prune.pred = predict(train.prune, traindata2, type = "class")
+cm3=table(predicted = train.prune.pred, actual = traindata2$DraftStatus)
 
 (sum(diag(cm3)))/sum(cm3)
 cm3[2,2]/(cm3[2,1]+cm3[2,2])
 
-test.prune.pred = predict(train.prune, testData, type= "class")
-cm4=table(predicted = test.prune.pred, actual = testData$DraftStatus)
-(sum(diag(cm4)))/sum(cm4)
-cm4[2,2]/(cm4[2,1]+cm4[2,2])
 
-trainData2=trainData
+# Final Tree
 finalsouth247tree=train.prune
 plot(finalsouth247tree)
 text(finalsouth247tree, pretty = 0)
 title(main = "South247 Classification Tree")
 
-south247.pred = predict(finalsouth247tree, trainData2, type = "class")
-south247.cm=table(predicted = south247.pred, actual = trainData2$DraftStatus)
-
-(sum(diag(cm3)))/sum(cm3)
-cm3[2,2]/(cm3[2,1]+cm3[2,2])
-
-
-
-library(randomForest)
-
-rf.south = randomForest(DraftStatus~., data=trainData, proximity=T)
-rf.south
-table(predict(rf.south), trainData$DraftStatus)
-
-importance(rf.south)
-varImpPlot(rf.south)
+south247.pred = predict(finalsouth247tree, traindata2, type = "class")
+cm2=table(predicted = south247.pred, actual = traindata2$DraftStatus)
+cm2

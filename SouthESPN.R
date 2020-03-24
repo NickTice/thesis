@@ -4,6 +4,7 @@ library('xlsx')
 library(bestglm)
 
 
+# Reads in excel file. Necessary because manual imputation was made for the high school socioeconomic information.
 y=file.choose()
 finalESPN1=read.xlsx(y,1)
 southESPN=finalESPN1
@@ -25,7 +26,7 @@ for (x in which(southESPN$State %in% c("WV","VA","KY","TN","NC","SC","GA","AL","
 }
 
 southESPN$Southwest=0
-for (x in which(southESPN$State %in% c("TX","OK", "NM", "AZ","UT","NV"))){
+for (x in which(southESPN$State %in% c("TX","OK", "NM", "AZ"))){
   southESPN[x,15]=1
 }
 
@@ -37,7 +38,7 @@ for (x in which(southESPN$State %in% c("OH","IN","MI","IL","MO","WI","MN","IA","
 
 
 southESPN$West=0
-for (x in which(southESPN$State %in% c("CO","WY","MT","ID","WA","OR","CA","AK","HI"))){
+for (x in which(southESPN$State %in% c("CO","WY","MT","ID","WA","OR","CA","AK","HI","UT","NV"))){
   southESPN[x,17]=1
 }
 
@@ -92,6 +93,12 @@ southESPN=na.omit(southESPN)
 southESPN=subset(southESPN, subset = (South==1))
 southESPN=subset(southESPN, select = -c(Northeast, South, Southwest, Midwest, West, Private,AllBoys,ATH))
 
+
+
+#############################################################################3
+
+
+library(bestglm)
 modelsSouthESPN=bestglm(southESPN, IC="AIC", family = binomial,TopModels = 10)
 modelsSouthESPN$BestModels
 
@@ -99,7 +106,7 @@ fit1=glm(Drafted~ Grade + Height + Minority + OL + RB, data = southESPN, family 
 fit2=glm(Drafted~ Grade + Height + OL + RB, data = southESPN, family = "binomial")
 fit3=glm(Drafted~ Grade + Height + EconomicDis + OL + RB, data = southESPN, family = "binomial")
 fit4=glm(Drafted~ Grade + Height + Minority + OL + RB + LB, data = southESPN, family = "binomial")
-fit5=glm(Drafted~ Grade + Height + Graduation + OL + RB + LB, data = southESPN, family = "binomial")
+fit5=glm(Drafted~ Grade + Height + Graduation + OL + RB, data = southESPN, family = "binomial")
 
 compareGLM(fit1,fit2,fit3,fit4,fit5)
 
@@ -114,34 +121,6 @@ BIC(fit2)
 BIC(fit3)
 BIC(fit4)
 BIC(fit5)
-
-
-
-library(glmnet)
-# http://www.sthda.com/english/articles/36-classification-methods-essentials/149-penalized-logistic-regression-essentials-in-r-ridge-lasso-and-elastic-net/#computing-penalized-logistic-regression
-x=model.matrix(Drafted~.,southESPN)[,-1]
-y=southESPN$Drafted
-# alpha 1 for lasso 0 for ridge.
-# In penalized regression, you need to specify a constant lambda to adjust the amount of the coefficient shrinkage. The best lambda for your data, can be defined as the lambda that minimize the cross-validation prediction error rate. 
-# This can be determined automatically using the function cv.glmnet().
-
-cv.lasso <- cv.glmnet(x, y, alpha = 1, family = "binomial")
-model=glmnet(x, y, family = "binomial", alpha = 1, lambda = cv.lasso$lambda.min)
-# Make prediction on test data
-probabilities <- model %>% predict(newx = x)
-predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
-# Model accuracy
-observed.classes <- southESPN$Drafted
-coef(model)
-mean(predicted.classes == observed.classes)
-
-full.model <- glm(Drafted ~., data = southESPN, family = binomial)
-# Make predictions
-probabilities <- full.model %>% predict(southESPN, type = "response")
-predicted.classes <- ifelse(probabilities > 0.5, 1,0)
-# Model accuracy
-observed.classes <- southESPN$Drafted
-mean(predicted.classes == observed.classes)
 
 
 # fail top reject second model is better
@@ -235,13 +214,12 @@ specificity(southESPN$Drafted, predicted5, threshold = optCutOff5)
 precision(southESPN$Drafted, predicted5, threshold = optCutOff5)
 confusionMatrix(southESPN$Drafted, predicted5, optCutOff5)
 
-# Final model
+#### Final model ####
 
 southESPN.log=glm(Drafted~ Grade + Height + OL + RB, data = southESPN, family = "binomial")
 predicted.southESPN <- predict(southESPN.log, southESPN, type="response")
 
 optCutOff.southESPN <- optimalCutoff(southESPN$Drafted, predicted.southESPN)
-
 
 misClassError(southESPN$Drafted, predicted.southESPN, threshold = optCutOff.southESPN)
 
@@ -255,22 +233,17 @@ confusionMatrix(southESPN$Drafted, predicted.southESPN, optCutOff.southESPN)
 
 
 
-
+#############################################################################################
 ## Decision Tree
 
 library(tree)
 
 southESPN$Drafted=as.factor(southESPN$Drafted)
 
-ind = sample(2, nrow(southESPN), replace=TRUE, prob=c(0.7,0.3))
 trainData = southESPN
-#testESPN.S = southESPN[ind==2,]
 DraftStatus = ifelse(trainData$Drafted==1, "Drafted", "Undrafted")
 trainData=data.frame(trainData, DraftStatus)
-#DraftStatus = ifelse(testData$Drafted==1, "Drafted", "Undrafted")
-#testData=data.frame(testData, DraftStatus)
 trainData=subset(trainData, select = -Drafted)
-#testData=subset(testData, select = -Drafted)
 
 
 tree.train=tree(DraftStatus ~., data = trainData)
@@ -280,7 +253,6 @@ text(tree.train, pretty = 0)
 
 
 train.pred=predict(tree.train, trainData, type = "class")
-#test.pred=predict(tree.train, testData, type="class")
 
 cm1=table(predicted=train.pred, actual=trainData$DraftStatus)
 (sum(diag(cm1)))/sum(cm1)
@@ -302,7 +274,7 @@ plot(train.cv)
 plot(train.cv$size, train.cv$dev / nrow(trainData), type = "b",
      xlab = "Tree Size", ylab = "CV Misclassification Rate")
 
-train.prune= prune.misclass(tree.train, best = 4)
+train.prune= prune.misclass(tree.train, best = 3)
 summary(train.prune)
 
 plot(train.prune)
@@ -311,18 +283,18 @@ title(main = "Pruned Classification Tree")
 
 train.prune.pred = predict(train.prune, trainData, type = "class")
 cm3=table(predicted = train.prune.pred, actual = trainData$DraftStatus)
+cm3
 
 (sum(diag(cm3)))/sum(cm3)
 cm3[2,2]/(cm3[2,1]+cm3[2,2])
 
-test.prune.pred = predict(train.prune, testData, type= "class")
-cm4=table(predicted = test.prune.pred, actual = testData$DraftStatus)
-(sum(diag(cm4)))/sum(cm4)
-cm4[2,2]/(cm4[2,1]+cm4[2,2])
 
 finalsouthESPNtree=train.prune
 finalsouthESPNtree
 trainData4=trainData
+
+# Final tree
+
 
 plot(finalsouthESPNtree)
 text(finalsouthESPNtree, pretty = 0)

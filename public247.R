@@ -4,12 +4,12 @@ library('stringr')
 library('xlsx')
 
 
-
+# Reads in excel file. Necessary because manual imputation was made for the high school socioeconomic information.
 x=file.choose()
 final247=read.xlsx(x,1)
 public247=subset(final247, subset = (Private==0))
-public247=subset(public247, select = -c(Column1, Year, Player, HighSchool))
-names(public247) = c("Grade", "Position", "State", "Height", "Weight", "Drafted", "Private", "Enrollment", "AllBoys", "Minority", "EconomicDis", "Graduation")
+public247=subset(public247, select = -c(Column1, Year, HighSchool))
+names(public247) = c("Grade","Name", "Position", "State", "Height", "Weight", "Drafted", "Private", "Enrollment", "AllBoys", "Minority", "EconomicDis", "Graduation")
 
   
 # Drops categorical variables and reorders them so the draft column is last
@@ -19,27 +19,27 @@ public247$EconomicDis=as.numeric(public247$EconomicDis)
 
 public247$Northeast=0
 for (x in which(public247$State %in% c("ME","NH","MA","RI","CT","VT","NY","PA","NJ", "DC","DE", "MD"))) {
-  public247[x,11]=1
+  public247[x,12]=1
 }
 
 public247$South=0
 for (x in which(public247$State %in% c("WV","VA","KY","TN","NC","SC","GA","AL","MS","AR","FL","LA"))){
-  public247[x,12]=1
+  public247[x,13]=1
 }
 
 public247$Southwest=0
-for (x in which(public247$State %in% c("TX","OK", "NM", "AZ","UT","NV"))){
-  public247[x,13]=1
+for (x in which(public247$State %in% c("TX","OK", "NM", "AZ"))){
+  public247[x,14]=1
 }
 
 public247$Midwest=0
 for (x in which(public247$State %in% c("OH","IN","MI","IL","MO","WI","MN","IA","KS","NE","SD","ND"))){
-  public247[x,14]=1
+  public247[x,15]=1
 }
 
 public247$West=0
-for (x in which(public247$State %in% c("CO","WY","MT","ID","WA","OR","CA","AK","HI"))){
-  public247[x,15]=1
+for (x in which(public247$State %in% c("CO","WY","MT","ID","WA","OR","CA","AK","HI","UT","NV"))){
+  public247[x,16]=1
 }
 
 
@@ -47,16 +47,23 @@ for (x in which(public247$State %in% c("CO","WY","MT","ID","WA","OR","CA","AK","
 
 public247$OFF=0
 for (x in which(public247$Position %in% c("DUAL", "PRO","OC","OG","OT", "RB","APB","WR","TE"))){
-  public247[x,16]=1
+  public247[x,17]=1
 }
 
 public247$DEF=0
 for (x in which(public247$Position %in% c("SDE","WDE","DT","ILB","OLB","S","CB"))){
-  public247[x,17]=1
+  public247[x,18]=1
 }
 
-public247=subset(public247, select = -c(State, Position))
+public247=subset(public247, select = -c(State, Position, Name))
 public247=public247[c(1:3,5:15,4)]
+
+
+
+#####################################################
+
+
+
 
 library(bestglm)
 public247AIC=bestglm(public247, IC="AIC", family = binomial, TopModels = 10 )
@@ -72,7 +79,7 @@ fit.test=glm(Drafted~ Grade + Height + Southwest + West + OFF, data = public247,
 
 compareGLM(fit.null,fit1,fit2,fit3,fit4,fit5,fit.test)
 
-anova(fit.null,fit4,fit2,fit3,fit1,fit5,fit.test,test="Chisq")
+anova(fit4,fit2,fit3,fit1,fit5,fit.test,test="Chisq")
 
 summary(fit1)
 summary(fit2)
@@ -179,7 +186,10 @@ sensitivity(public247$Drafted, predicted5, threshold = optCutOff5)
 specificity(public247$Drafted, predicted5, threshold = optCutOff5)
 precision(public247$Drafted, predicted5, threshold = optCutOff5)
 
-# Final model
+
+
+#### Final model ####
+
 public247.log=glm(Drafted~ Grade + Height + Southwest + OFF, data = public247, family = "binomial")
 predicted.public247 <- predict(public247.log, public247, type="response")
 
@@ -196,79 +206,49 @@ specificity(public247$Drafted, predicted.public247, threshold = optCutOff.public
 precision(public247$Drafted, predicted.public247, threshold = optCutOff.public247)
 confusionMatrix(public247$Drafted, predicted.public247, optCutOff.public247)
 
+predicted.public247=as.numeric(predicted.public247)
+public247$Prob=predicted.public247
+write.xlsx(public247, "247PublicProb.xlsx")
 
-
-# http://www.sthda.com/english/articles/36-classification-methods-essentials/149-penalized-logistic-regression-essentials-in-r-ridge-lasso-and-elastic-net/#computing-penalized-logistic-regression
-x=model.matrix(Drafted~.,public247)[,-1]
-y=public247$Drafted
-# alpha 1 for lasso 0 for ridge.
-# In penalized regression, you need to specify a constant lambda to adjust the amount of the coefficient shrinkage. The best lambda for your data, can be defined as the lambda that minimize the cross-validation prediction error rate. 
-# This can be determined automatically using the function cv.glmnet().
-
-cv.lasso <- cv.glmnet(x, y, alpha = 1, family = "binomial")
-model=glmnet(x, y, family = "binomial", alpha = 1, lambda = cv.lasso$lambda.min)
-# Make prediction on test data
-probabilities <- model %>% predict(newx = x)
-predicted.classes <- ifelse(probabilities > 0.5, 1, 0)
-# Model accuracy
-observed.classes <- public247$Drafted
-coef(model)
-mean(predicted.classes == observed.classes)
-
-full.model <- glm(Drafted ~., data = public247, family = binomial)
-# Make predictions
-probabilities <- full.model %>% predict(public247, type = "response")
-predicted.classes <- ifelse(probabilities > 0.5, 1,0)
-# Model accuracy
-observed.classes <- public247$Drafted
-mean(predicted.classes == observed.classes)
+##################################################################################
 
 library(tree)
 #SVM
 
 
-ind = sample(2, nrow(public247), replace=TRUE, prob=c(0.8,.2))
-trainData = public247
-#testData = public247[ind==2,]
+
+trainData1 = public247
 
 
-DraftStatus = ifelse(trainData$Drafted==1, "Drafted", "Undrafted")
-trainData=data.frame(trainData, DraftStatus)
-DraftStatus = ifelse(testData$Drafted==1, "Drafted", "Undrafted")
-#testData=data.frame(testData, DraftStatus)
-trainData=subset(trainData, select = -Drafted)
-#testData=subset(testData, select = -Drafted)
-tree.train=tree(DraftStatus ~ ., data = trainData)
+DraftStatus = ifelse(trainData1$Drafted==1, "Drafted", "Undrafted")
+trainData1=data.frame(trainData1, DraftStatus)
+trainData1=subset(trainData1, select = -Drafted)
+
+tree.train=tree(DraftStatus ~ ., data = trainData1)
 summary(tree.train)
 plot(tree.train)
 text(tree.train, pretty = 0)
 
-#DraftStatus = ifelse(testData$Drafted==1, "Drafted", "Undrafted")
-#testData=data.frame(testData, DraftStatus2)
 
-train.pred=predict(tree.train, trainData, type = "class")
-#test.pred=predict(tree.train, testData, type="class")
+train.pred=predict(tree.train, trainData1, type = "class")
 
 cm1=table(predicted=train.pred, actual=trainData$DraftStatus)
 (sum(diag(cm1)))/sum(cm1)
 cm1[2,2]/(cm1[2,1]+cm1[2,2])
 
-#cm2=table(predicted=test.pred, actual=testData$DraftStatus)
-#(sum(diag(cm2)))/sum(cm2)
-#cm2[2,2]/(cm2[2,1]+cm2[2,2])
 
 train.cv = cv.tree(tree.train, FUN = prune.misclass)
 min_idx=which.min(train.cv$dev)
 train.cv$size[min_idx]
 
-par(mfrow = c(1, 1))
+par(mfrow = c(2, 1))
 
 plot(train.cv)
 # better plot
 plot(train.cv$size, train.cv$dev / nrow(trainData), type = "b",
      xlab = "Tree Size", ylab = "CV Misclassification Rate")
 
-train.prune= prune.misclass(tree.train, best = 4)
+train.prune= prune.misclass(tree.train, best = 3)
 summary(train.prune)
 
 plot(train.prune)
@@ -281,21 +261,18 @@ cm3=table(predicted = train.prune.pred, actual = trainData$DraftStatus)
 (sum(diag(cm3)))/sum(cm3)
 cm3[2,2]/(cm3[2,1]+cm3[2,2])
 
-test.prune.pred = predict(train.prune, testData, type= "class")
-cm4=table(predicted = test.prune.pred, actual = testData$DraftStatus)
-(sum(diag(cm4)))/sum(cm4)
-cm4[2,2]/(cm4[2,1]+cm4[2,2])
 
+trainData1=public247
 finalpublic247tree=train.prune
 finalpublic247tree
 
+
+# Final tree
 plot(finalpublic247tree)
 text(finalpublic247tree, pretty = 0)
 title(main = "Public247 Classification Tree")
 public247.pred = predict(finalpublic247tree,trainData1, type= "class")
-cm4=table(predicted = public247.pred, actual = trainData1$DraftStatus)
-cm4
-(sum(diag(cm4)))/sum(cm4)
-cm4[2,2]/(cm4[2,1]+cm4[2,2])
-
-kjj
+cm1=table(predicted = public247.pred, actual = trainData1$DraftStatus)
+cm1
+(sum(diag(cm1)))/sum(cm1)
+cm1[2,2]/(cm1[2,1]+cm1[2,2])
