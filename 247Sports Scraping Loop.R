@@ -104,5 +104,5 @@ drafted247$Drafted = 1
 undrafted247$Drafted = 0
 # Bind the orginal with this new column
 trainplayers247=rbind(drafted247,undrafted247)
-# trainplayers247=rbind(drafted247,undrafted247[1:nrow(drafted247),])
+
 
